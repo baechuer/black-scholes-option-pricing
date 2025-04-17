@@ -5,7 +5,7 @@ from .config import Config
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
-    CORS(app)
+    CORS(app, resources={r"/api/*": {"origins": "http://localhost:5173"}}, supports_credentials=True)
 
     # Initialize extensions (e.g., SQLAlchemy, LoginManager)
     # db.init_app(app)
