@@ -81,7 +81,34 @@
             <option value="put">Put</option>
           </select>
         </div>
+        <!-- Greeks Option -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Greek</label>
+          <select 
+            v-model="form.greek_type"
+            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="delta">Delta</option>
+            <option value="gamma">Gamma</option>
+            <option value="rho">Rho</option>
+            <option value="theta">Theta</option>
+            <option value="vega">Vega</option>
 
+          </select>
+        </div>
+        <!-- Graph Compare Value-->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Compared Value</label>
+          <select 
+            v-model="form.graph_x"
+            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="spot">Spot Price</option>
+            <option value="strike">Strike Price</option>
+            <option value="rf">Risk-Free Rate</option>
+            <option value="volatility">Volatility</option>
+          </select>
+        </div>
         <!-- Submit Button -->
         <button 
           type="submit" 
@@ -119,18 +146,26 @@
           <p class="text-sm font-medium text-red-800">{{ error }}</p>
         </div>
 
+        <!-- Greeks Result Text-->
         <div v-if="greek_result" class="mt-6 p-4 bg-green-50 rounded-md border border-green-200">
           <h3 class="text-lg font-medium text-green-800">Greeks:</h3>
           <div class=" flex flex-wrap">
             <div v-for="(value, greek) in greek_result" :key="greek" class="flex items-center mr-2">
-              <div class="p-1 bg-green-50 rounded-md border border-green-200 flex hover:bg-green-100 transition ease-in duration 50">
-                <p class="text-green-800 font-bold">{{ greek }} ({{ getGreekSymbol(greek) }}):  </p>
+              <a   href="#" @click.prevent="this.changeGreek(greek)" class="p-1 bg-green-50 rounded-md border border-green-200 flex hover:bg-green-100 transition ease-in duration 50">
+                <p class="text-green-800 font-bold">{{ greek }} 
+                  <span v-if="greek === 'theta'">(Daily)</span> <!-- Clarify Theta is daily -->
+                  ({{ getGreekSymbol(greek) }}):  </p>
                 <p class="ml-2 text-green-800">  {{ value.toFixed(4) }}</p>
-              </div>
+              </a>
+
 
             </div>
           </div>
-
+        </div>
+        <!--Visualisation of Greeks-->
+        <div class="mt-6 p-4 bg-green-50 rounded-md border border-green-200">
+          <h3 class="text-lg font-medium text-green-800">Greeks</h3>
+          <div ref="plotlyChart"></div>
         </div>
       </div>
     </div>
@@ -140,8 +175,9 @@
 <script>
 import { calculateOptionPrice } from '@/services/optionPricingService.js';
 import { calculateGreeks } from '@/services/optionPricingService.js';
-
+import { getGreekGraph } from '@/services/optionPricingService.js';
 import debounce from 'lodash.debounce';
+import Plotly from 'plotly.js-dist-min';
 
 export default {
   data() {
@@ -152,7 +188,9 @@ export default {
         time_to_expiry: 1,
         risk_free_rate: 5,  // Represented as percentage (5 for 5%)
         volatility: 20,     // Represented as percentage (20 for 20%)
-        option_type: 'call'
+        option_type: 'call',
+        greek_type: 'delta',
+        graph_x: 'spot'
       },
       result: null,
       error: null,
@@ -203,11 +241,15 @@ export default {
         this.isLoading = false;
       }
     },
+    capitalizeFirstLetter(val) {
+      return String(val).charAt(0).toUpperCase() + String(val).slice(1);
+    },
     async calculatePrice() {
       this.isLoading = true;
       this.error = null;
       this.result = null;
       this.calculateGreek()
+      this.greekGraph()
       try {
         // Convert percentages to decimals for calculation
         const payload = {
@@ -224,6 +266,99 @@ export default {
         this.result = response.data;
       } catch (error) {
         this.error = error.response?.data?.error || error.message || 'Calculation failed';
+      } finally {
+        this.isLoading = false;
+      }
+    },
+    changeGreek(type) {
+      this.form.greek_type = type;
+    },
+    async greekGraph() {
+      this.isLoading = true;
+      this.error = null;
+      this.result = null;
+      try {
+        // Convert percentages to decimals for calculation
+        const payload = {
+          ...this.form,
+          risk_free_rate: this.form.risk_free_rate / 100,
+          volatility: this.form.volatility / 100
+        };
+
+        // Here you would call your API
+        // const response = await optionPricingService.calculateOptionPrice(payload);
+        
+        // Mock response for demonstration
+        const response = await getGreekGraph(payload);
+        const title = '<b>' + `${this.capitalizeFirstLetter(this.form.greek_type)}` +  ` vs ${this.capitalizeFirstLetter(this.form.graph_x)} Chart</b>` 
+        const currentX = {
+          spot: this.form.spot_price,
+          strike: this.form.strike,
+          time: this.form.time_to_expiry,
+          rf: this.form.risk_free_rate / 100,
+          volatility: this.form.volatility / 100
+        }[this.form.graph_x];
+        const data = [
+          {
+            x: response.data.horizontal,
+            y: response.data.data,
+            type: 'scatter',
+            mode: 'lines', // Line only, no points
+            line: { color: '#4285F4', width: 2 },
+            name: this.form.greek_type
+          },
+          {
+            x: [currentX, currentX],
+            y: [Math.min(...response.data.data), Math.max(...response.data.data)],
+            type: 'scatter',
+            mode: 'lines',
+            line: {
+              color: 'red',
+              width: 2,
+              dash: 'dash'
+            },
+            name: `Current Value`,
+            hoverinfo: 'skip',
+            showlegend: true
+          }
+        ];
+
+        const layout = {
+          title: {
+            text: title,
+            font: { size: 20, family: 'Arial' },
+            x: 0.5, // Center title
+            xanchor: 'center'
+          },
+          xaxis: {
+            title: {
+              text: `<b>${this.capitalizeFirstLetter(this.form.graph_x)}</b>`,
+              font: { size: 14 }
+            },
+            gridcolor: '#f0f0f0'
+          },
+          yaxis: {
+            title: {
+              text: `<b>${this.capitalizeFirstLetter(this.form.greek_type)} Value</b>`,
+              font: { size: 14 }
+            },
+            gridcolor: '#f0f0f0'
+          },
+          margin: { t: 80, b: 80, l: 80, r: 40 },
+          plot_bgcolor: 'white',
+          paper_bgcolor: 'white',
+          showlegend: true
+        };
+
+        // 3. Render with responsive config
+        Plotly.newPlot(
+          this.$refs.plotlyChart,
+          data,
+          layout,
+          { responsive: true }
+        );
+      } catch (error) {
+        this.error = error.response?.data?.error || error.message || 'Greek Graph load failed';
       } finally {
         this.isLoading = false;
       }
