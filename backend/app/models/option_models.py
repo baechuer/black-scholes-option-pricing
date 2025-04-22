@@ -1,6 +1,9 @@
 from math import log, sqrt, exp
 from scipy.stats import norm
+from scipy.optimize import brentq
 import numpy as np
+from typing import Union
+import math
 def black_scholes(S, K, T, r, sigma, option_type='call'):
     d1 = (log(S/K) + (r + 0.5 * sigma ** 2) * T) / (sigma * sqrt(T))
     d2 = d1 - sigma * sqrt(T)
@@ -10,6 +13,34 @@ def black_scholes(S, K, T, r, sigma, option_type='call'):
     else:
         price = K * exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
     return price
+
+def black_scholes_price(S: float, K: float, T: float, r: float, sigma: float, option_type: str) -> float:
+    d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+    d2 = d1 - sigma * math.sqrt(T)
+
+    if option_type.lower() == 'call':
+        return S * norm.cdf(d1) - K * math.exp(-r * T) * norm.cdf(d2)
+    elif option_type.lower() == 'put':
+        return K * math.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+    else:
+        raise ValueError("option_type must be 'call' or 'put'")
+
+def calculate_implied_volatility(
+    S: float, K: float, T: float, r: float, 
+    market_price: float, option_type: str
+) -> float:
+    print(S, market_price)
+    def objective_function(sigma):
+        return black_scholes_price(S, K, T, r, sigma, option_type) - market_price
+
+    try:
+        # Search in a reasonable range [1e-5, 5] (0.001% to 500% volatility)
+        iv = brentq(objective_function, 1e-5, 5.0, maxiter=1000, xtol=1e-6)
+        return iv
+    except ValueError:
+        print("Erroed")
+        raise ValueError("Implied volatility not found in the range 0.00001 to 5.0")
+    
 
 def calculate_greeks(S, K, T, r, sigma, option_type='call'):
     d1 = (log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * sqrt(T))

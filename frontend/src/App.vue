@@ -167,7 +167,20 @@
           <h3 class="text-lg font-medium text-green-800">Greeks</h3>
           <div ref="plotlyChart"></div>
         </div>
+      <!--Volatility Smile by ticket-->
+      <div class="mt-6 p-4 bg-green-50 rounded-md border border-green-200">
+        <div class="controls">
+          <input v-model="ticket" placeholder="Ticker (e.g. AAPL)">
+          <input v-model="riskFreeRate" type="number" step="0.01" placeholder="Risk-free rate">
+          <button @click="fetchSmileData">Update</button>
+        </div>
+        
+        <div id="volatilitySmilePlot" class="mt-6"></div>
+
       </div>
+      </div>
+
+
     </div>
   </div>
 </template>
@@ -178,7 +191,7 @@ import { calculateGreeks } from '@/services/optionPricingService.js';
 import { getGreekGraph } from '@/services/optionPricingService.js';
 import debounce from 'lodash.debounce';
 import Plotly from 'plotly.js-dist-min';
-
+import { getVolatilitySmileByTicket } from '@/services/optionPricingService.js';
 export default {
   data() {
     return {
@@ -195,7 +208,11 @@ export default {
       result: null,
       error: null,
       isLoading: false,
-      greek_result: null
+      greek_result: null,
+      ticket: 'AAPL',
+      riskFreeRate: 0.05,
+      expiries: {},
+      loading: false
     };
   },
   created() {
@@ -214,6 +231,10 @@ export default {
       },
       deep: true,
     },
+  },
+  mounted() {
+    this.fetchSmileData();
+    this.calculatePrice();
   },
   methods: {
     async calculateGreek(){
@@ -272,6 +293,73 @@ export default {
     },
     changeGreek(type) {
       this.form.greek_type = type;
+    },
+    async fetchSmileData() {
+      try {
+        const payload = {
+          ...this.form,
+          risk_free_rate: this.riskFreeRate,
+          ticket: this.ticket
+        };
+        const response = await getVolatilitySmileByTicket(payload);
+        const result = response.data
+        this.plotSmile(result)
+      } catch (error) {
+        console.error("Error fetching data:", error)
+      }
+    },
+
+    plotSmile(result) {
+      console.log(result)
+      const callStrikes = result.call_data.map(d => d.strike)
+      const callVols = result.call_data.map(d => d.implied_vol * 100) // Convert to %
+
+      const putStrikes = result.put_data.map(d => d.strike)
+      const putVols = result.put_data.map(d => d.implied_vol * 100)
+
+      const maxY = Math.max(...callVols.concat(putVols)) * 1.1
+
+      const traces = [
+        {
+          x: callStrikes,
+          y: callVols,
+          mode: 'lines',
+          name: 'Call IV',
+          line: { color: 'blue' }
+        },
+        {
+          x: putStrikes,
+          y: putVols,
+          mode: 'lines',
+          name: 'Put IV',
+          line: { color: 'red' }
+        },
+        {
+          x: [result.spot_price, result.spot_price],
+          y: [0, maxY],
+          mode: 'lines',
+          name: 'Spot Price',
+          line: {
+            color: 'green',
+            width: 2,
+            dash: 'dot'
+          }
+        }
+      ]
+
+      const layout = {
+        title: {title: {text: `Volatility Smile (${this.ticket})`,
+          font: { size: 20, family: 'Arial' },
+            x: 0.5, // Center title
+            xanchor: 'center'
+        }},
+        xaxis: { title: {text: 'Strike Price ($)'} },
+        yaxis: { title: {text: 'Implied Volatility (%)'} },
+        legend: { x: 1, y: 1 },
+        margin: { t: 50, l: 50, r: 50, b: 50 }
+      }
+
+      Plotly.newPlot('volatilitySmilePlot', traces, layout)
     },
     async greekGraph() {
       this.isLoading = true;

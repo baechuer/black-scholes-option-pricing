@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, abort
 from app.models.option_models import *
 from app.models.validate import black_scholes_input_validate
+from app.routes.market import *
 bp = Blueprint('pricing', __name__)
 
 @bp.route("/option_price", methods=['POST', 'OPTIONS'])
@@ -61,6 +62,7 @@ def calc_greeks():
         data['volatility'],
         data['option_type']
     ))
+
 
 @bp.route("/greeks-chart", methods=['POST', 'OPTIONS'])
 def greeks_chart():
